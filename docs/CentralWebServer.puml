@@ -1,0 +1,146 @@
+@startuml
+!theme spacelab
+
+package "Central Web Server" {
+    class ServerApp {
+        - httpServer: HttpServer
+        - agentManager: AgentManager
+        - metricsDatabase: MetricsDatabase
+        - configStorage: ConfigurationStorage
+        - alertManager: AlertManager
+        --
+        + start()
+        + stop()
+    }
+
+    class HttpServer {
+        - webLib: WebServerLibrary // e.g., Crow, Pistache
+        --
+        + HttpServer()
+        + startListening()
+        + stopListening()
+        + addRoute(string path, HttpMethod method, function handler)
+        + serveStaticFiles(string path)
+    }
+
+    abstract class RequestHandler {
+        + {abstract} handle(Request, Response)
+    }
+
+    class MetricsApiHandler {
+        - metricsDB: MetricsDatabase
+        --
+        + MetricsApiHandler(MetricsDatabase*)
+        + handlePost(Request, Response)
+        + handleGet(Request, Response)
+    }
+
+    class AgentApiHandler {
+        - agentMgr: AgentManager
+        - configStorage: ConfigurationStorage
+        --
+        + AgentApiHandler(AgentManager*, ConfigurationStorage*)
+        + handleGetAgents(Request, Response)
+        + handleGetAgentConfig(Request, Response)
+        + handlePostAgentConfig(Request, Response)
+    }
+
+    class AlertsApiHandler {
+        - alertMgr: AlertManager
+        --
+        + AlertsApiHandler(AlertManager*)
+        + handleGetAlerts(Request, Response)
+    }
+
+    class AgentManager {
+        - registeredAgents: map<string, AgentInfo>
+        --
+        + registerAgent(string id, AgentInfo info)
+        + getAgentInfo(string id): AgentInfo
+        + updateLastSeen(string id)
+    }
+
+    class AgentInfo {
+        - id: string
+        - hostname: string
+        - lastSeen: DateTime
+        - status: AgentStatus
+    }
+
+    class MetricsDatabase {
+        - dbDriver: DatabaseDriver // e.g., SQLite, PostgreSQL client
+        --
+        + MetricsDatabase(string connectionString)
+        + storeMetricData(string agentId, MetricData data)
+        + getMetricData(string agentId, DateTime from, DateTime to): vector<MetricData>
+        + storeAlert(Alert alert)
+        + getAlerts(string agentId, DateTime from, DateTime to): vector<Alert>
+    }
+
+    class ConfigurationStorage {
+        - dbDriver: DatabaseDriver
+        --
+        + ConfigurationStorage(string connectionString)
+        + getAgentConfig(string agentId): AgentConfig
+        + saveAgentConfig(string agentId, AgentConfig config)
+    }
+
+    class AgentConfig {
+        - agentId: string
+        - settings: map<string, string>
+        - monitorRules: list<MonitorRule>
+    }
+
+    class MonitorRule {
+        - metricType: string
+        - threshold: string
+        - durationSeconds: int
+        - alertLevel: string
+    }
+
+    class AlertManager {
+        - metricsDB: MetricsDatabase
+        --
+        + AlertManager(MetricsDatabase*)
+        + processIncomingAlert(Alert alert)
+        + getActiveAlerts(): vector<Alert>
+    }
+
+    class Alert {
+        - agentId: string
+        - timestamp: DateTime
+        - ruleId: string
+        - message: string
+        - level: AlertLevel
+        - status: AlertStatus
+    }
+
+    together {
+        ServerApp --> HttpServer
+        ServerApp --> AgentManager
+        ServerApp --> MetricsDatabase
+        ServerApp --> ConfigurationStorage
+        ServerApp --> AlertManager
+    }
+
+    HttpServer o-- RequestHandler : handles
+    RequestHandler <|-- MetricsApiHandler
+    RequestHandler <|-- AgentApiHandler
+    RequestHandler <|-- AlertsApiHandler
+
+    MetricsApiHandler --> MetricsDatabase
+    AgentApiHandler --> AgentManager
+    AgentApiHandler --> ConfigurationStorage
+    AlertsApiHandler --> AlertManager
+
+    MetricsDatabase --> MetricData : stores >
+    MetricsDatabase --> Alert : stores >
+    ConfigurationStorage --> AgentConfig : stores >
+    AlertManager --> MetricsDatabase : uses >
+    AgentManager --> AgentInfo : manages >
+
+    ' External connection Agent -> Server
+    AgentApp .right.> HttpServer : "sends data to"
+    HttpNotifier .right.> HttpServer : "sends alerts to"
+}
+@enduml

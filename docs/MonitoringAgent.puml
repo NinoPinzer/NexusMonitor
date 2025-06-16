@@ -1,0 +1,176 @@
+    @startuml
+!theme spacelab
+
+package "Monitoring Agent" {
+    class AgentApp {
+        - systemMonitor: SystemMonitor
+        - configManager: ConfigManager
+        - dataSender: DataSender
+        --
+        + start()
+        + stop()
+    }
+
+    class SystemMonitor {
+        - dataQueue: ThreadSafeQueue<MetricData>
+        - monitors: list<IMetricMonitor*>
+        - collectionThread: thread
+        --
+        + SystemMonitor(ConfigManager*)
+        + startMonitoring()
+        + stopMonitoring()
+        + addMonitor(IMetricMonitor*)
+        - collectMetricsLoop()
+    }
+
+    interface IMetricMonitor {
+        + collect(): MetricData
+    }
+
+    class CpuMonitor {
+        + CpuMonitor(SysMonitorLib*)
+        + collect(): CpuStats
+    }
+    class MemoryMonitor {
+        + MemoryMonitor(SysMonitorLib*)
+        + collect(): MemoryStats
+    }
+    class DiskMonitor {
+        + DiskMonitor(SysMonitorLib*)
+        + collect(): vector<DiskIoStats>
+    }
+    class NetworkMonitor {
+        + NetworkMonitor(SysMonitorLib*)
+        + collect(): vector<NetworkIoStats>
+    }
+    class ProcessMonitor {
+        + ProcessMonitor(SysMonitorLib*)
+        + collect(): vector<ProcessInfo>
+    }
+    class ServiceMonitor {
+        + ServiceMonitor(SysMonitorLib*)
+        + collect(): vector<ServiceStatus>
+    }
+    class LogMonitor {
+        + LogMonitor(SysMonitorLib*)
+        + collect(): vector<LogEntry>
+    }
+
+    class ConfigManager {
+        - settings: map<string, string>
+        - observers: list<IConfigObserver*>
+        --
+        + ConfigManager(string configPath)
+        + loadConfig()
+        + saveConfig()
+        + getSetting(string key): string
+        + setSetting(string key, string value)
+        + subscribe(IConfigObserver*)
+        + notifyObservers()
+    }
+
+    interface IConfigObserver {
+        + updateConfig()
+    }
+
+    class Alerter {
+        - configManager: ConfigManager
+        - notifier: INotifier
+        --
+        + Alerter(ConfigManager*, INotifier*)
+        + evaluateMetrics(MetricData)
+        - checkThresholds(MetricData)
+        - createAlert(MetricData, string rule): string
+    }
+
+    interface INotifier {
+        + sendAlert(string message)
+    }
+
+    class HttpNotifier {
+        + HttpNotifier(string serverUrl, string agentId)
+        + sendAlert(string message)
+    }
+
+    class DataSender {
+        - dataQueue: ThreadSafeQueue<MetricData>&
+        - serverUrl: string
+        - agentId: string
+        - sendThread: thread
+        --
+        + DataSender(ThreadSafeQueue<MetricData>&, string serverUrl, string agentId)
+        + startSending()
+        + stopSending()
+        - sendDataLoop()
+        - sendDataToServer(MetricData)
+    }
+
+    class ThreadSafeQueue<T> {
+        - q: queue<T>
+        - mtx: mutex
+        - cv: condition_variable
+        --
+        + push(T item)
+        + pop(): T
+        + tryPop(T& item): bool
+    }
+
+    class MetricData {
+        - timestamp: DateTime
+        - cpu: CpuStats
+        - memory: MemoryStats
+        - disks: vector<DiskIoStats>
+        - networks: vector<NetworkIoStats>
+        - processes: vector<ProcessInfo>
+        - services: vector<ServiceStatus>
+        - logEvents: vector<LogEntry>
+    }
+
+    together {
+        AgentApp --> SystemMonitor
+        AgentApp --> ConfigManager
+        AgentApp --> DataSender
+    }
+
+    SystemMonitor --> IMetricMonitor : uses >
+    SystemMonitor --> ThreadSafeQueue : produces >
+
+    IMetricMonitor <|-- CpuMonitor
+    IMetricMonitor <|-- MemoryMonitor
+    IMetricMonitor <|-- DiskMonitor
+    IMetricMonitor <|-- NetworkMonitor
+    IMetricMonitor <|-- ProcessMonitor
+    IMetricMonitor <|-- ServiceMonitor
+    IMetricMonitor <|-- LogMonitor
+
+    CpuMonitor ..> SysMonitorLib : uses
+    MemoryMonitor ..> SysMonitorLib : uses
+    DiskMonitor ..> SysMonitorLib : uses
+    NetworkMonitor ..> SysMonitorLib : uses
+    ProcessMonitor ..> SysMonitorLib : uses
+    ServiceMonitor ..> SysMonitorLib : uses
+    LogMonitor ..> SysMonitorLib : uses
+
+    ConfigManager o-- IConfigObserver
+    ConfigManager ..> AgentApp : notifies
+    AgentApp ..|> IConfigObserver : implements
+
+    SystemMonitor --> Alerter : sends data to >
+    Alerter --> INotifier : uses >
+    INotifier <|-- HttpNotifier
+
+    DataSender --> ThreadSafeQueue : consumes >
+    DataSender ..> MetricData : sends >
+}
+
+package "External Library" {
+    class SysMonitorLib {
+        <<library>>
+        + getCpuStats(): CpuStats
+        + getMemoryStats(): MemoryStats
+        + getDiskIoStats(): vector<DiskIoStats>
+        + getNetworkIoStats(): vector<NetworkIoStats>
+        + getProcesses(): vector<ProcessInfo>
+    }
+}
+@enduml
